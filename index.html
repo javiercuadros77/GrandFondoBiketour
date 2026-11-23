@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Taller de Ciclismo - Tablero Kanban Seguro</title>
+  <title>Gran Fondo Bike Tour - Tablero de Citas en Vivo</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons CDN -->
@@ -47,7 +47,7 @@
     </button>
   </div>
 
-  <!-- ================= HEADER HERO ================= -->
+  <!-- ================= HEADER HERO (GRAN FONDO BIKE TOUR) ================= -->
   <header class="relative bg-slate-900 border-b border-slate-800 overflow-hidden shadow-2xl">
     <div class="absolute inset-0 z-0 opacity-25 bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=1920&q=80');"></div>
     <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent z-0"></div>
@@ -61,17 +61,16 @@
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Taller VeloFix Pro</h1>
+            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Gran Fondo Bike Tour</h1>
             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              Backend Seguro Render
+              Airtable Live
             </span>
           </div>
-          <p class="text-sm text-slate-400 mt-1">Gestión y flujo operativo de citas de servicio técnico y mantenimiento</p>
+          <p class="text-sm text-slate-400 mt-1">Gestión operativa de citas de servicio técnico y mantenimiento de bicicletas</p>
         </div>
       </div>
 
-      <!-- Acciones Rápidas -->
       <div class="flex items-center gap-3">
         <button onclick="fetchAirtableRecords(true)" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-lg shadow-emerald-600/20 transition">
           <i data-lucide="refresh-cw" class="w-4 h-4" id="refreshIcon"></i>
@@ -160,15 +159,11 @@
   </main>
 
   <footer class="bg-slate-950 border-t border-slate-900 py-6 text-center text-xs text-slate-500">
-    <p>Taller VeloFix Pro &bull; Conexión Segura vía Render Backend &bull; Cero Claves Expuestas</p>
+    <p>Gran Fondo Bike Tour &bull; Conexión Segura vía Render Backend &bull; Cero Claves Expuestas</p>
   </footer>
 
-  <!-- ================= JAVASCRIPT SEGURO ================= -->
+  <!-- ================= JAVASCRIPT ================= -->
   <script>
-    // =========================================================================
-    // ENDPOINT SEGURO: El frontend solo llama a la API interna de Render.
-    // Ningún token ni Base ID de Airtable se escribe aquí.
-    // =========================================================================
     const API_BASE_URL = "/api/citas";
     const POLL_INTERVAL = 6000; // Actualización cada 6 segundos
 
@@ -204,7 +199,7 @@
       } catch (error) {
         console.error('Error al conectar con la API de Render:', error);
         if (manual) {
-          alert('No se pudo conectar con el servidor de Render. Revisa que las variables de entorno estén configuradas en Render.');
+          alert('No se pudo conectar con el servidor. Revisa los logs de Render.');
         }
       } finally {
         if (manual && refreshIcon) {
@@ -228,6 +223,7 @@
       records.forEach(record => {
         const fields = record.fields || {};
         const id = record.id;
+        const createdTime = record.createdTime || '';
         const estado = (fields['Estado'] || fields['Status'] || 'Pendiente').trim();
 
         if (!isInitialLoad && !knownRecordIds.has(id)) {
@@ -235,7 +231,7 @@
         }
         knownRecordIds.add(id);
 
-        const card = createCardElement(id, fields, estado);
+        const card = createCardElement(id, fields, estado, createdTime);
 
         if (estado.toLowerCase() === 'confirmada' || estado.toLowerCase() === 'confirmado') {
           colConfirmada.appendChild(card);
@@ -265,11 +261,37 @@
       lucide.createIcons();
     }
 
-    function createCardElement(recordId, fields, estado) {
-      const cliente = fields['Cliente'] || fields['Nombre'] || 'Cliente sin nombre';
+    function createCardElement(recordId, fields, estado, createdTime) {
+      // 1. Cliente y Teléfono (resueltos desde la tabla Clientes)
+      let cliente = fields['Cliente_Nombre'] || '';
+      if (!cliente && typeof fields['Cliente'] === 'string') cliente = fields['Cliente'];
+      if (!cliente && fields['Nombre']) cliente = fields['Nombre'];
+      if (!cliente) cliente = 'Cliente no asignado';
+
+      let telefono = fields['Cliente_Telefono'] || fields['Telefono'] || fields['Teléfono'] || fields['Contacto'] || '';
+
+      // 2. Técnico asignado (resuelto desde la tabla Tecnicos)
+      let tecnico = fields['Tecnico_Nombre'] || '';
+      if (!tecnico && typeof fields['Tecnico'] === 'string') tecnico = fields['Tecnico'];
+      if (!tecnico) tecnico = 'Por asignar';
+
+      // 3. Servicio / Bicicleta
       const servicio = fields['Bicicleta'] || fields['Servicio'] || fields['Tipo'] || 'Mantenimiento General';
-      const fecha = fields['Fecha'] || fields['Fecha_Hora'] || fields['Hora'] || 'Por definir';
-      const telefono = fields['Telefono'] || fields['Teléfono'] || fields['Contacto'] || '';
+
+      // 4. Fecha Agendada solicitada
+      const fechaAgendada = fields['Fecha'] || fields['Fecha Agendada'] || fields['Fecha_Cita'] || fields['Fecha_Hora'] || 'Por definir';
+
+      // 5. Fecha de Creación del registro
+      let fechaCreacionTexto = '';
+      if (createdTime) {
+        try {
+          const d = new Date(createdTime);
+          fechaCreacionTexto = d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch(e) {
+          fechaCreacionTexto = createdTime;
+        }
+      }
+
       const notas = fields['Notas'] || fields['Detalles'] || '';
 
       const card = document.createElement('div');
@@ -322,16 +344,29 @@
           ${estadoBadge}
         </div>
 
-        <div class="space-y-1 text-xs text-slate-400">
-          <div class="flex items-center gap-1.5">
-            <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-500"></i>
-            <span>${escapeHtml(fecha)}</span>
-          </div>
+        <div class="space-y-1.5 text-xs text-slate-400">
           ${telefono ? `
-          <div class="flex items-center gap-1.5">
-            <i data-lucide="phone" class="w-3.5 h-3.5 text-slate-500"></i>
+          <div class="flex items-center gap-1.5 text-slate-300">
+            <i data-lucide="phone" class="w-3.5 h-3.5 text-emerald-400"></i>
             <span>${escapeHtml(telefono)}</span>
           </div>` : ''}
+
+          <div class="flex items-center gap-1.5 text-slate-300">
+            <i data-lucide="user-cog" class="w-3.5 h-3.5 text-blue-400"></i>
+            <span>Técnico: <strong class="text-white">${escapeHtml(tecnico)}</strong></span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>Fecha Cita: <strong class="text-slate-200">${escapeHtml(fechaAgendada)}</strong></span>
+          </div>
+
+          ${fechaCreacionTexto ? `
+          <div class="flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i data-lucide="clock" class="w-3 h-3"></i>
+            <span>Registrado: ${escapeHtml(fechaCreacionTexto)}</span>
+          </div>` : ''}
+
           ${notas ? `
           <div class="p-2 bg-slate-900 rounded border border-slate-800 text-[11px] text-slate-300 mt-1">
             ${escapeHtml(notas)}
@@ -367,7 +402,7 @@
 
       } catch (error) {
         console.error('Error al actualizar estado:', error);
-        alert('No se pudo actualizar el estado en Airtable a través de Render.');
+        alert('No se pudo actualizar el estado en Airtable.');
         if (card) {
           card.classList.remove('opacity-50', 'pointer-events-none');
         }
@@ -378,9 +413,9 @@
       const banner = document.getElementById('liveBanner');
       const text = document.getElementById('liveBannerText');
 
-      const cliente = fields['Cliente'] || fields['Nombre'] || 'Nuevo Cliente';
+      const cliente = fields['Cliente_Nombre'] || fields['Cliente'] || fields['Nombre'] || 'Nuevo Cliente';
       const servicio = fields['Bicicleta'] || fields['Servicio'] || 'Servicio General';
-      const fecha = fields['Fecha'] || fields['Hora'] || 'Hoy';
+      const fecha = fields['Fecha'] || fields['Fecha Agendada'] || 'Hoy';
 
       text.textContent = `${cliente} ha agendado para "${servicio}" (${fecha}).`;
       banner.classList.remove('hidden');
