@@ -25,8 +25,9 @@ app.use('/api', (req, res, next) => {
 });
 
 // Obtener todas las citas
-app.get('/api/citas', async (req, res) => {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}`;
+// Función auxiliar para leer cualquier tabla de Airtable
+async function fetchTableRecords(tableName) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`;
   try {
     const response = await fetch(url, {
       headers: {
@@ -34,20 +35,78 @@ app.get('/api/citas', async (req, res) => {
         'Content-Type': 'application/json'
       }
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({ error: errorText });
-    }
-
+    if (!response.ok) return [];
     const data = await response.json();
-    res.json(data);
+    return data.records || [];
+  } catch (e) {
+    console.error(`Error consultando tabla ${tableName}:`, e);
+    return [];
+  }
+}
+
+// 1. OBTENER Y ENRIQUECER TODAS LAS CITAS (GET /api/citas)
+app.get('/api/citas', async (req, res) => {
+  try {
+    // Consultar en paralelo las 3 tablas: Citas, Clientes y Tecnicos
+    const [citasRecords, clientesRecords, tecnicosRecords] = await Promise.all([
+      fetchTableRecords(AIRTABLE_TABLE_NAME),
+      fetchTableRecords('Clientes'),
+      fetchTableRecords('Tecnicos')
+    ]);
+
+    // Crear mapa de Clientes por recId: { id -> { nombre, telefono } }
+    const clientesMap = {};
+    clientesRecords.forEach(c => {
+      const f = c.fields || {};
+      clientesMap[c.id] = {
+        nombre: f['Nombre'] || f['Cliente'] || f['Name'] || '',
+        telefono: f['Telefono'] || f['Teléfono'] || f['Phone'] || f['Celular'] || ''
+      };
+    });
+
+    // Crear mapa de Técnicos por recId: { id -> { nombre } }
+    const tecnicosMap = {};
+    tecnicosRecords.forEach(t => {
+      const f = t.fields || {};
+      tecnicosMap[t.id] = {
+        nombre: f['Nombre'] || f['Tecnico'] || f['Técnico'] || f['Name'] || ''
+      };
+    });
+
+    // Enriquecer cada cita resolviendo los nombres reales
+    const enrichedRecords = citasRecords.map(cita => {
+      const fields = { ...cita.fields };
+
+      // Resolver Cliente y Teléfono
+      if (Array.isArray(fields['Cliente']) && fields['Cliente'].length > 0) {
+        const clienteId = fields['Cliente'][0];
+        if (clientesMap[clienteId]) {
+          fields['Cliente_Nombre'] = clientesMap[clienteId].nombre;
+          fields['Cliente_Telefono'] = clientesMap[clienteId].telefono;
+        }
+      }
+
+      // Resolver Técnico
+      if (Array.isArray(fields['Tecnico']) && fields['Tecnico'].length > 0) {
+        const tecnicoId = fields['Tecnico'][0];
+        if (tecnicosMap[tecnicoId]) {
+          fields['Tecnico_Nombre'] = tecnicosMap[tecnicoId].nombre;
+        }
+      }
+
+      return {
+        id: cita.id,
+        createdTime: cita.createdTime,
+        fields
+      };
+    });
+
+    res.json({ records: enrichedRecords });
   } catch (error) {
-    console.error('Error al consultar Airtable:', error);
-    res.status(500).json({ error: 'Error interno del servidor al consultar Airtable' });
+    console.error('Error al enriquecer citas:', error);
+    res.status(500).json({ error: 'Error al consultar Airtable' });
   }
 });
-
 // Actualizar estado de cita
 app.patch('/api/citas/:id', async (req, res) => {
   const { id } = req.params;
