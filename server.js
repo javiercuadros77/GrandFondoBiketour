@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,7 +13,10 @@ const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || 'Citas';
 
 app.use(cors());
 app.use(express.json());
+
+// Servir archivos estáticos desde /public y desde la raíz
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname)));
 
 // Middleware de verificación de variables
 app.use('/api', (req, res, next) => {
@@ -46,14 +50,12 @@ async function fetchTableRecords(tableName) {
 // 1. OBTENER Y ENRIQUECER TODAS LAS CITAS (GET /api/citas)
 app.get('/api/citas', async (req, res) => {
   try {
-    // Consultar en paralelo las 3 tablas
     const [citasRecords, clientesRecords, tecnicosRecords] = await Promise.all([
       fetchTableRecords(AIRTABLE_TABLE_NAME),
       fetchTableRecords('Clientes'),
       fetchTableRecords('Tecnicos')
     ]);
 
-    // Crear mapa de Clientes por recId: { id -> { nombre, telefono } }
     const clientesMap = {};
     clientesRecords.forEach(c => {
       const f = c.fields || {};
@@ -63,7 +65,6 @@ app.get('/api/citas', async (req, res) => {
       };
     });
 
-    // Crear mapa de Técnicos por recId: { id -> { nombre } }
     const tecnicosMap = {};
     tecnicosRecords.forEach(t => {
       const f = t.fields || {};
@@ -72,11 +73,9 @@ app.get('/api/citas', async (req, res) => {
       };
     });
 
-    // Enriquecer cada cita resolviendo los nombres reales
     const enrichedRecords = citasRecords.map(cita => {
       const fields = { ...cita.fields };
 
-      // Resolver Cliente y Teléfono
       if (Array.isArray(fields['Cliente']) && fields['Cliente'].length > 0) {
         const clienteId = fields['Cliente'][0];
         if (clientesMap[clienteId]) {
@@ -85,7 +84,6 @@ app.get('/api/citas', async (req, res) => {
         }
       }
 
-      // Resolver Técnico
       if (Array.isArray(fields['Tecnico']) && fields['Tecnico'].length > 0) {
         const tecnicoId = fields['Tecnico'][0];
         if (tecnicosMap[tecnicoId]) {
@@ -136,9 +134,39 @@ app.patch('/api/citas/:id', async (req, res) => {
   }
 });
 
-// Servir la página principal
+// 3. RUTA COMODÍN ULTRA-RESILIENTE (Busca index.html en /public o en la raíz)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const possiblePaths = [
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(__dirname, 'public', 'Index.html'),
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'Index.html')
+  ];
+
+  for (const filePath of possiblePaths) {
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+  }
+
+  // Diagnóstico visual si no se encuentra el archivo
+  try {
+    const rootFiles = fs.readdirSync(__dirname);
+    let publicFiles = [];
+    if (fs.existsSync(path.join(__dirname, 'public'))) {
+      publicFiles = fs.readdirSync(path.join(__dirname, 'public'));
+    }
+    return res.status(404).send(`
+         <div style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #f8fafc; min-height: 100vh;">
+        <h2 style="color: #f87171;">⚠️ Archivo index.html no encontrado</h2>
+        <p>El servidor está funcionando, pero no encontró <code>index.html</code> en <code>/public</code> ni en la raíz.</p>
+        <p><strong>Archivos encontrados en la raíz:</strong> ${rootFiles.join(', ')}</p>
+        <p><strong>Archivos encontrados en /public:</strong> ${publicFiles.length > 0 ? publicFiles.join(', ') : '(carpeta no existe o vacía)'}</p>
+      </div>
+    `);
+  } catch (err) {
+    return res.status(404).send('No se encontró index.html');
+  }
 });
 
 app.listen(PORT, () => {
