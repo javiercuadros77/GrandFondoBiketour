@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taller de Ciclismo - Tablero de Citas en Vivo</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .animate-new-badge {
+      animation: pulse-glow 2s infinite;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
+
+  <!-- ================= TOP NOTIFICATION BANNER (REAL TIME) ================= -->
+  <div id="liveBanner" class="hidden bg-emerald-600 text-white px-4 py-3 shadow-lg transition-all duration-500 ease-in-out sticky top-0 z-50 flex items-center justify-between border-b border-emerald-400">
+    <div class="flex items-center gap-3 max-w-6xl mx-auto w-full">
+      <span class="p-2 bg-emerald-800 rounded-full animate-bounce">
+        <i data-lucide="bell-ring" class="w-5 h-5 text-white"></i>
+      </span>
+      <div>
+        <p class="font-bold text-sm tracking-wide uppercase text-emerald-200">¡Nueva Cita Registrada en Tiempo Real!</p>
+        <p id="liveBannerText" class="text-xs sm:text-sm text-white font-medium"></p>
+      </div>
+    </div>
+    <button onclick="dismissBanner()" class="text-emerald-100 hover:text-white p-1 rounded-md hover:bg-emerald-700">
+      <i data-lucide="x" class="w-5 h-5"></i>
+    </button>
+  </div>
+
+  <!-- ================= HEADER HERO ================= -->
+  <header class="relative bg-slate-900 border-b border-slate-800 overflow-hidden shadow-2xl">
+    <!-- Background Image with Overlay -->
+    <div class="absolute inset-0 z-0 opacity-25 bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=1920&q=80');"></div>
+    <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent z-0"></div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 p-0.5 shadow-lg shadow-emerald-500/10 flex items-center justify-center">
+          <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+            <i data-lucide="bike" class="w-8 h-8 text-emerald-400"></i>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Taller VeloFix Pro</h1>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              Airtable Live
+            </span>
+          </div>
+          <p class="text-sm text-slate-400 mt-1">Gestión y flujo operativo de citas de servicio técnico y mantenimiento</p>
+        </div>
+      </div>
+
+      <!-- Controls & Quick Actions -->
+      <div class="flex items-center gap-3">
+        <button onclick="openConfigModal()" class="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs sm:text-sm font-medium border border-slate-700 transition">
+          <i data-lucide="settings" class="w-4 h-4 text-slate-400"></i>
+          Configurar Airtable
+        </button>
+        <button onclick="fetchAirtableRecords(true)" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-lg shadow-emerald-600/20 transition">
+          <i data-lucide="refresh-cw" class="w-4 h-4" id="refreshIcon"></i>
+          Sincronizar
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= STATUS OVERVIEW BAR ================= -->
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-amber-950/20 border border-amber-500/20 rounded-xl p-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <i data-lucide="clock" class="w-4 h-4"></i>
+          </div>
+          <span class="text-xs uppercase font-semibold text-amber-300">Pendientes</span>
+        </div>
+        <span id="countPendiente" class="text-xl font-bold text-amber-400">0</span>
+      </div>
+
+      <div class="bg-blue-950/20 border border-blue-500/20 rounded-xl p-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+          </div>
+          <span class="text-xs uppercase font-semibold text-blue-300">Confirmadas</span>
+        </div>
+        <span id="countConfirmada" class="text-xl font-bold text-blue-400">0</span>
+      </div>
+
+      <div class="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+          </div>
+          <span class="text-xs uppercase font-semibold text-emerald-300">Completadas</span>
+        </div>
+        <span id="countCompletada" class="text-xl font-bold text-emerald-400">0</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= KANBAN BOARD (3 COLUMNS) ================= -->
+  <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+
+      <!-- COLUMNA 1: PENDIENTE -->
+      <div class="bg-slate-900/80 border border-amber-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
+        <div class="bg-gradient-to-r from-amber-950/50 to-amber-900/20 px-5 py-4 border-b border-amber-500/20 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3 h-3 rounded-full bg-amber-400 ring-4 ring-amber-400/20"></span>
+            <h2 class="text-sm font-bold tracking-wider uppercase text-amber-200">1. Pendiente</h2>
+          </div>
+          <span id="badgeColPendiente" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">0</span>
+        </div>
+        <div id="colPendiente" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]">
+          <!-- Tarjetas se inyectan dinámicamente -->
+        </div>
+      </div>
+
+      <!-- COLUMNA 2: CONFIRMADA -->
+      <div class="bg-slate-900/80 border border-blue-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
+        <div class="bg-gradient-to-r from-blue-950/50 to-blue-900/20 px-5 py-4 border-b border-blue-500/20 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3 h-3 rounded-full bg-blue-400 ring-4 ring-blue-400/20"></span>
+            <h2 class="text-sm font-bold tracking-wider uppercase text-blue-200">2. Confirmada</h2>
+          </div>
+          <span id="badgeColConfirmada" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">0</span>
+        </div>
+        <div id="colConfirmada" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]">
+          <!-- Tarjetas se inyectan dinámicamente -->
+        </div>
+      </div>
+
+      <!-- COLUMNA 3: COMPLETADA -->
+      <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
+        <div class="bg-gradient-to-r from-emerald-950/50 to-emerald-900/20 px-5 py-4 border-b border-emerald-500/20 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3 h-3 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20"></span>
+            <h2 class="text-sm font-bold tracking-wider uppercase text-emerald-200">3. Completada</h2>
+          </div>
+          <span id="badgeColCompletada" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">0</span>
+        </div>
+        <div id="colCompletada" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]">
+          <!-- Tarjetas se inyectan dinámicamente -->
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="bg-slate-950 border-t border-slate-900 py-6 text-center text-xs text-slate-500">
+    <p>Taller VeloFix Pro &bull; Conexión en vivo con Airtable API &bull; GitHub Pages Ready</p>
+  </footer>
+
+  <!-- ================= CONFIGURATION MODAL ================= -->
+  <div id="configModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="database" class="w-5 h-5 text-emerald-400"></i>
+          <h3 class="text-lg font-bold text-white">Configuración de Airtable</h3>
+        </div>
+        <button onclick="closeConfigModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 py-4 text-sm">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Personal Access Token (PAT):</label>
+          <input type="password" id="inputToken" placeholder="patXXXXXXXXXXXXXX.XXXXXXXXXXXXXXXXXX" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+          <p class="text-[11px] text-slate-500 mt-1">Generado en airtable.com/create/tokens con permisos <code>data.records:read</code> y <code>data.records:write</code>.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Base ID:</label>
+          <input type="text" id="inputBaseId" placeholder="appXXXXXXXXXXXXXX" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+          <p class="text-[11px] text-slate-500 mt-1">El ID que empieza con <code>app...</code> en la URL de tu base.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Nombre de la Tabla:</label>
+          <input type="text" id="inputTableName" placeholder="Citas" value="Citas" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+        </div>
+
+        <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400 space-y-1">
+          <p class="font-semibold text-slate-300">Campos esperados en la tabla Citas:</p>
+          <p>&bull; <code>Cliente</code> (Texto simple)</p>
+          <p>&bull; <code>Bicicleta</code> o <code>Servicio</code> (Texto simple / Selección)</p>
+          <p>&bull; <code>Fecha</code> o <code>Fecha_Hora</code> (Fecha / Texto)</p>
+          <p>&bull; <code>Estado</code> (Selección: Pendiente, Confirmada, Completada)</p>
+          <p>&bull; <code>Telefono</code> o <code>Notas</code> (Opcional)</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+        <button onclick="closeConfigModal()" class="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white">Cancelar</button>
+        <button onclick="saveAirtableConfig()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Guardar y Conectar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT LOGIC ================= -->
+  <script>
+    // --- ESTADO Y CONFIGURACIÓN ---
+    let config = {
+      token: localStorage.getItem('airtable_token') || '',
+      baseId: localStorage.getItem('airtable_base_id') || '',
+      tableName: localStorage.getItem('airtable_table_name') || 'Citas',
+      pollInterval: 6000 // Consultar cada 6 segundos
+    };
+
+    let knownRecordIds = new Set();
+    let isInitialLoad = true;
+    let pollTimer = null;
+
+    // --- INICIALIZACIÓN ---
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      loadSavedConfigInputs();
+
+      if (!config.token || !config.baseId) {
+        // Cargar datos demo de ejemplo si aún no se ha configurado
+        loadDemoCards();
+        openConfigModal();
+      } else {
+        fetchAirtableRecords();
+      }
+
+      // Iniciar sondeo continuo en tiempo real
+      pollTimer = setInterval(() => {
+        if (config.token && config.baseId) {
+          fetchAirtableRecords(false);
+        }
+      }, config.pollInterval);
+    });
+
+    function loadSavedConfigInputs() {
+      document.getElementById('inputToken').value = config.token;
+      document.getElementById('inputBaseId').value = config.baseId;
+      document.getElementById('inputTableName').value = config.tableName;
+    }
+
+    function openConfigModal() {
+      document.getElementById('configModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeConfigModal() {
+      document.getElementById('configModal').classList.add('hidden');
+    }
+
+    function saveAirtableConfig() {
+      const token = document.getElementById('inputToken').value.trim();
+      const baseId = document.getElementById('inputBaseId').value.trim();
+      const tableName = document.getElementById('inputTableName').value.trim() || 'Citas';
+
+      if (!token || !baseId) {
+        alert('Por favor ingresa tanto el Token como el Base ID.');
+        return;
+      }
+
+      config.token = token;
+      config.baseId = baseId;
+      config.tableName = tableName;
+
+      localStorage.setItem('airtable_token', token);
+      localStorage.setItem('airtable_base_id', baseId);
+      localStorage.setItem('airtable_table_name', tableName);
+
+      knownRecordIds.clear();
+      isInitialLoad = true;
+      closeConfigModal();
+      fetchAirtableRecords(true);
+    }
+
+    // --- LEER REGISTROS DE AIRTABLE ---
+    async function fetchAirtableRecords(manual = false) {
+      if (!config.token || !config.baseId) return;
+
+      const refreshIcon = document.getElementById('refreshIcon');
+      if (manual && refreshIcon) refreshIcon.classList.add('animate-spin');
+
+      const url = `https://api.airtable.com/v0/${config.baseId}/${encodeURIComponent(config.tableName)}`;
+
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${config.token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        renderKanban(data.records);
+
+      } catch (error) {
+        console.error('Error al conectar con Airtable:', error);
+        if (manual) {
+          alert('Error al consultar Airtable. Revisa el Token, Base ID o nombre de la tabla en configuración.');
+        }
+      } finally {
+        if (manual && refreshIcon) {
+          setTimeout(() => refreshIcon.classList.remove('animate-spin'), 600);
+        }
+      }
+    }
+
+    // --- RENDERIZAR TABLERO KANBAN ---
+    function renderKanban(records) {
+      const colPendiente = document.getElementById('colPendiente');
+      const colConfirmada = document.getElementById('colConfirmada');
+      const colCompletada = document.getElementById('colCompletada');
+
+      colPendiente.innerHTML = '';
+      colConfirmada.innerHTML = '';
+      colCompletada.innerHTML = '';
+
+      let countP = 0, countC = 0, countDone = 0;
+      let newlyDetectedRecord = null;
+
+      records.forEach(record => {
+        const fields = record.fields || {};
+        const id = record.id;
+        const estado = (fields['Estado'] || fields['Status'] || 'Pendiente').trim();
+
+        // Detección de nueva cita en tiempo real
+        if (!isInitialLoad && !knownRecordIds.has(id)) {
+          newlyDetectedRecord = fields;
+        }
+        knownRecordIds.add(id);
+
+        const card = createCardElement(id, fields, estado);
+
+        if (estado.toLowerCase() === 'confirmada' || estado.toLowerCase() === 'confirmado') {
+          colConfirmada.appendChild(card);
+          countC++;
+        } else if (estado.toLowerCase() === 'completada' || estado.toLowerCase() === 'completado' || estado.toLowerCase() === 'cerrada') {
+          colCompletada.appendChild(card);
+          countDone++;
+        } else {
+          // Pendiente por defecto
+          colPendiente.appendChild(card);
+          countP++;
+        }
+      });
+
+      // Actualizar contadores
+      document.getElementById('countPendiente').textContent = countP;
+      document.getElementById('countConfirmada').textContent = countC;
+      document.getElementById('countCompletada').textContent = countDone;
+
+      document.getElementById('badgeColPendiente').textContent = countP;
+      document.getElementById('badgeColConfirmada').textContent = countC;
+      document.getElementById('badgeColCompletada').textContent = countDone;
+
+      // Disparar banner superior si llegó una cita nueva en vivo
+      if (newlyDetectedRecord) {
+        triggerLiveBanner(newlyDetectedRecord);
+      }
+
+      isInitialLoad = false;
+      lucide.createIcons();
+    }
+
+    // --- CREAR ELEMENTO DE TARJETA ---
+    function createCardElement(recordId, fields, estado) {
+      const cliente = fields['Cliente'] || fields['Nombre'] || 'Cliente sin nombre';
+      const servicio = fields['Bicicleta'] || fields['Servicio'] || fields['Tipo'] || 'Mantenimiento General';
+      const fecha = fields['Fecha'] || fields['Fecha_Hora'] || fields['Hora'] || 'Por definir';
+      const telefono = fields['Telefono'] || fields['Teléfono'] || fields['Contacto'] || '';
+      const notas = fields['Notas'] || fields['Detalles'] || '';
+
+      const card = document.createElement('div');
+      card.className = 'bg-slate-950/90 border border-slate-800 rounded-xl p-4 shadow-lg hover:border-slate-700 transition space-y-3';
+      card.id = `card-${recordId}`;
+
+      let estadoBadge = '';
+      let actionButtons = '';
+
+      if (estado.toLowerCase() === 'confirmada' || estado.toLowerCase() === 'confirmado') {
+        estadoBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">CONFIRMADA</span>`;
+        // Botón para completar cita
+        actionButtons = `
+          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-end">
+            <button onclick="updateRecordStatus('${recordId}', 'Completada')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-emerald-600/20 transition">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              Completar Cita
+            </button>
+          </div>
+        `;
+      } else if (estado.toLowerCase() === 'completada' || estado.toLowerCase() === 'completado' || estado.toLowerCase() === 'cerrada') {
+        estadoBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">COMPLETADA</span>`;
+        actionButtons = `
+          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-emerald-400">
+            <span class="inline-flex items-center gap-1">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Servicio Cerrado
+            </span>
+          </div>
+        `;
+      } else {
+        estadoBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">PENDIENTE</span>`;
+        actionButtons = `
+          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-end">
+            <button onclick="updateRecordStatus('${recordId}', 'Confirmada')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-blue-600/20 transition">
+              <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+              Confirmar
+            </button>
+          </div>
+        `;
+      }
+
+      card.innerHTML = `
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-bold text-white tracking-wide">${escapeHtml(cliente)}</h4>
+            <div class="flex items-center gap-1 text-xs text-emerald-400 font-medium mt-0.5">
+              <i data-lucide="wrench" class="w-3 h-3"></i>
+              <span>${escapeHtml(servicio)}</span>
+            </div>
+          </div>
+          ${estadoBadge}
+        </div>
+
+        <div class="space-y-1 text-xs text-slate-400">
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span>${escapeHtml(fecha)}</span>
+          </div>
+          ${telefono ? `
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="phone" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span>${escapeHtml(telefono)}</span>
+          </div>` : ''}
+          ${notas ? `
+          <div class="p-2 bg-slate-900 rounded border border-slate-800 text-[11px] text-slate-300 mt-1">
+            ${escapeHtml(notas)}
+          </div>` : ''}
+        </div>
+
+        ${actionButtons}
+      `;
+
+      return card;
+    }
+
+    // --- ACTUALIZAR ESTADO EN AIRTABLE (PATCH) ---
+    async function updateRecordStatus(recordId, newStatus) {
+      if (!config.token || !config.baseId) {
+        alert('Configura tu Airtable antes de actualizar registros.');
+        return;
+      }
+
+      const card = document.getElementById(`card-${recordId}`);
+      if (card) {
+        card.classList.add('opacity-50', 'pointer-events-none');
+      }
+
+      const url = `https://api.airtable.com/v0/${config.baseId}/${encodeURIComponent(config.tableName)}/${recordId}`;
+
+      try {
+        const response = await fetch(url, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${config.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            fields: {
+              'Estado': newStatus
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+
+        // Refrescar inmediatamente
+        await fetchAirtableRecords(false);
+
+      } catch (error) {
+        console.error('Error al actualizar estado:', error);
+        alert('No se pudo actualizar el estado en Airtable. Verifica los permisos de escritura del Token.');
+        if (card) {
+          card.classList.remove('opacity-50', 'pointer-events-none');
+        }
+      }
+    }
+
+    // --- BANNER DE CITA EN TIEMPO REAL ---
+    function triggerLiveBanner(fields) {
+      const banner = document.getElementById('liveBanner');
+      const text = document.getElementById('liveBannerText');
+
+      const cliente = fields['Cliente'] || fields['Nombre'] || 'Nuevo Cliente';
+      const servicio = fields['Bicicleta'] || fields['Servicio'] || 'Servicio General';
+      const fecha = fields['Fecha'] || fields['Hora'] || 'Hoy';
+
+      text.textContent = `${cliente} ha agendado para "${servicio}" (${fecha}).`;
+      banner.classList.remove('hidden');
+
+      lucide.createIcons();
+
+      // Auto ocultar después de 12 segundos
+      setTimeout(() => {
+        dismissBanner();
+      }, 12000);
+    }
+
+    function dismissBanner() {
+      const banner = document.getElementById('liveBanner');
+      banner.classList.add('hidden');
+    }
+
+    // --- DATOS DEMO DE EJEMPLO SI NO HAY TOKEN ---
+    function loadDemoCards() {
+      const demoRecords = [
+        { id: 'recDemo1', fields: { 'Cliente': 'Mateo Silva', 'Bicicleta': 'Trek Fuel EX - Mantenimiento Completo', 'Fecha': 'Hoy 10:30 AM', 'Telefono': '+52 55 1234 5678', 'Estado': 'Pendiente', 'Notas': 'Ruidos en el eje de pedalier y cambio desajustado.' }},
+        { id: 'recDemo2', fields: { 'Cliente': 'Valeria Gomez', 'Bicicleta': 'Specialized Allez - Purga de Frenos', 'Fecha': 'Hoy 12:00 PM', 'Telefono': '+52 55 8765 4321', 'Estado': 'Confirmada', 'Notas': 'Freno trasero sin presión hidráulica.' }},
+        { id: 'recDemo3', fields: { 'Cliente': 'Alejandro Cruz', 'Bicicleta': 'Giant Talon - Ajuste de Transmisión', 'Fecha': 'Hoy 09:00 AM', 'Telefono': '+52 55 4433 2211', 'Estado': 'Completada', 'Notas': 'Cadena lubricada y cambios sincronizados.' }}
+      ];
+      renderKanban(demoRecords);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
