@@ -1,446 +1,146 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gran Fondo Bike Tour - Tablero de Citas en Vivo</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons CDN -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <style>
-    @keyframes pulse-glow {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.85; transform: scale(1.02); }
-    }
-    .animate-new-badge {
-      animation: pulse-glow 2s infinite;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 8px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 8px;
-    }
-  </style>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
 
-  <!-- ================= BANNER EN TIEMPO REAL (PARTE SUPERIOR) ================= -->
-  <div id="liveBanner" class="hidden bg-emerald-600 text-white px-4 py-3 shadow-lg transition-all duration-500 ease-in-out sticky top-0 z-50 flex items-center justify-between border-b border-emerald-400">
-    <div class="flex items-center gap-3 max-w-6xl mx-auto w-full">
-      <span class="p-2 bg-emerald-800 rounded-full animate-bounce">
-        <i data-lucide="bell-ring" class="w-5 h-5 text-white"></i>
-      </span>
-      <div>
-        <p class="font-bold text-sm tracking-wide uppercase text-emerald-200">¡Nueva Cita Registrada en Tiempo Real!</p>
-        <p id="liveBannerText" class="text-xs sm:text-sm text-white font-medium"></p>
-      </div>
-    </div>
-    <button onclick="dismissBanner()" class="text-emerald-100 hover:text-white p-1 rounded-md hover:bg-emerald-700">
-      <i data-lucide="x" class="w-5 h-5"></i>
-    </button>
-  </div>
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  <!-- ================= HEADER HERO (GRAN FONDO BIKE TOUR) ================= -->
-  <header class="relative bg-slate-900 border-b border-slate-800 overflow-hidden shadow-2xl">
-    <div class="absolute inset-0 z-0 opacity-25 bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=1920&q=80');"></div>
-    <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent z-0"></div>
+// Variables de entorno de Render
+const AIRTABLE_PAT = process.env.AIRTABLE_PAT;
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || 'Citas';
 
-    <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-      <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 p-0.5 shadow-lg shadow-emerald-500/10 flex items-center justify-center">
-          <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-            <i data-lucide="bike" class="w-8 h-8 text-emerald-400"></i>
-          </div>
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Gran Fondo Bike Tour</h1>
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              Airtable Live
-            </span>
-          </div>
-          <p class="text-sm text-slate-400 mt-1">Gestión operativa de citas de servicio técnico y mantenimiento de bicicletas</p>
-        </div>
-      </div>
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-      <div class="flex items-center gap-3">
-        <button onclick="fetchAirtableRecords(true)" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-lg shadow-emerald-600/20 transition">
-          <i data-lucide="refresh-cw" class="w-4 h-4" id="refreshIcon"></i>
-          Sincronizar
-        </button>
-      </div>
-    </div>
-  </header>
+// Middleware de verificación de variables
+app.use('/api', (req, res, next) => {
+  if (!AIRTABLE_PAT || !AIRTABLE_BASE_ID) {
+    return res.status(500).json({ 
+      error: 'Variables de entorno no configuradas en Render. Define AIRTABLE_PAT y AIRTABLE_BASE_ID en Environment.' 
+    });
+  }
+  next();
+});
 
-  <!-- ================= RESUMEN DE CONTADORES ================= -->
-  <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div class="bg-amber-950/20 border border-amber-500/20 rounded-xl p-3 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <i data-lucide="clock" class="w-4 h-4"></i>
-          </div>
-          <span class="text-xs uppercase font-semibold text-amber-300">Pendientes</span>
-        </div>
-        <span id="countPendiente" class="text-xl font-bold text-amber-400">0</span>
-      </div>
+// Función auxiliar para leer cualquier tabla de Airtable
+async function fetchTableRecords(tableName) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${AIRTABLE_PAT}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.records || [];
+  } catch (e) {
+    console.error(`Error consultando tabla ${tableName}:`, e);
+    return [];
+  }
+}
 
-      <div class="bg-blue-950/20 border border-blue-500/20 rounded-xl p-3 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
-          </div>
-          <span class="text-xs uppercase font-semibold text-blue-300">Confirmadas</span>
-        </div>
-        <span id="countConfirmada" class="text-xl font-bold text-blue-400">0</span>
-      </div>
+// 1. OBTENER Y ENRIQUECER TODAS LAS CITAS (GET /api/citas)
+app.get('/api/citas', async (req, res) => {
+  try {
+    // Consultar en paralelo las 3 tablas
+    const [citasRecords, clientesRecords, tecnicosRecords] = await Promise.all([
+      fetchTableRecords(AIRTABLE_TABLE_NAME),
+      fetchTableRecords('Clientes'),
+      fetchTableRecords('Tecnicos')
+    ]);
 
-      <div class="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-3 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <i data-lucide="shield-check" class="w-4 h-4"></i>
-          </div>
-          <span class="text-xs uppercase font-semibold text-emerald-300">Completadas</span>
-        </div>
-        <span id="countCompletada" class="text-xl font-bold text-emerald-400">0</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= TABLERO KANBAN (3 COLUMNAS) ================= -->
-  <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-
-      <!-- COLUMNA 1: PENDIENTE -->
-      <div class="bg-slate-900/80 border border-amber-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
-        <div class="bg-gradient-to-r from-amber-950/50 to-amber-900/20 px-5 py-4 border-b border-amber-500/20 flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <span class="w-3 h-3 rounded-full bg-amber-400 ring-4 ring-amber-400/20"></span>
-            <h2 class="text-sm font-bold tracking-wider uppercase text-amber-200">1. Pendiente</h2>
-          </div>
-          <span id="badgeColPendiente" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">0</span>
-        </div>
-        <div id="colPendiente" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]"></div>
-      </div>
-
-      <!-- COLUMNA 2: CONFIRMADA -->
-      <div class="bg-slate-900/80 border border-blue-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
-        <div class="bg-gradient-to-r from-blue-950/50 to-blue-900/20 px-5 py-4 border-b border-blue-500/20 flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <span class="w-3 h-3 rounded-full bg-blue-400 ring-4 ring-blue-400/20"></span>
-            <h2 class="text-sm font-bold tracking-wider uppercase text-blue-200">2. Confirmada</h2>
-          </div>
-          <span id="badgeColConfirmada" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">0</span>
-        </div>
-        <div id="colConfirmada" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]"></div>
-      </div>
-
-      <!-- COLUMNA 3: COMPLETADA -->
-      <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
-        <div class="bg-gradient-to-r from-emerald-950/50 to-emerald-900/20 px-5 py-4 border-b border-emerald-500/20 flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <span class="w-3 h-3 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20"></span>
-            <h2 class="text-sm font-bold tracking-wider uppercase text-emerald-200">3. Completada</h2>
-          </div>
-          <span id="badgeColCompletada" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">0</span>
-        </div>
-        <div id="colCompletada" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]"></div>
-      </div>
-
-    </div>
-  </main>
-
-  <footer class="bg-slate-950 border-t border-slate-900 py-6 text-center text-xs text-slate-500">
-    <p>Gran Fondo Bike Tour &bull; Conexión Segura vía Render Backend &bull; Cero Claves Expuestas</p>
-  </footer>
-
-  <!-- ================= JAVASCRIPT ================= -->
-  <script>
-    const API_BASE_URL = "/api/citas";
-    const POLL_INTERVAL = 6000; // Actualización cada 6 segundos
-
-    let knownRecordIds = new Set();
-    let isInitialLoad = true;
-    let pollTimer = null;
-
-    document.addEventListener('DOMContentLoaded', () => {
-      lucide.createIcons();
-      fetchAirtableRecords(true);
-
-      pollTimer = setInterval(() => {
-        fetchAirtableRecords(false);
-      }, POLL_INTERVAL);
+    // Crear mapa de Clientes por recId: { id -> { nombre, telefono } }
+    const clientesMap = {};
+    clientesRecords.forEach(c => {
+      const f = c.fields || {};
+      clientesMap[c.id] = {
+        nombre: f['Nombre'] || f['Cliente'] || f['Name'] || '',
+        telefono: f['Telefono'] || f['Teléfono'] || f['Phone'] || f['Celular'] || ''
+      };
     });
 
-    async function fetchAirtableRecords(manual = false) {
-      const refreshIcon = document.getElementById('refreshIcon');
-      if (manual && refreshIcon) refreshIcon.classList.add('animate-spin');
+    // Crear mapa de Técnicos por recId: { id -> { nombre } }
+    const tecnicosMap = {};
+    tecnicosRecords.forEach(t => {
+      const f = t.fields || {};
+      tecnicosMap[t.id] = {
+        nombre: f['Nombre'] || f['Tecnico'] || f['Técnico'] || f['Name'] || ''
+      };
+    });
 
-      try {
-        const response = await fetch(API_BASE_URL, {
-          headers: { 'Content-Type': 'application/json' }
-        });
+    // Enriquecer cada cita resolviendo los nombres reales
+    const enrichedRecords = citasRecords.map(cita => {
+      const fields = { ...cita.fields };
 
-        if (!response.ok) {
-          throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        renderKanban(data.records || []);
-
-      } catch (error) {
-        console.error('Error al conectar con la API de Render:', error);
-        if (manual) {
-          alert('No se pudo conectar con el servidor. Revisa los logs de Render.');
-        }
-      } finally {
-        if (manual && refreshIcon) {
-          setTimeout(() => refreshIcon.classList.remove('animate-spin'), 600);
-        }
-      }
-    }
-
-    function renderKanban(records) {
-      const colPendiente = document.getElementById('colPendiente');
-      const colConfirmada = document.getElementById('colConfirmada');
-      const colCompletada = document.getElementById('colCompletada');
-
-      colPendiente.innerHTML = '';
-      colConfirmada.innerHTML = '';
-      colCompletada.innerHTML = '';
-
-      let countP = 0, countC = 0, countDone = 0;
-      let newlyDetectedRecord = null;
-
-      records.forEach(record => {
-        const fields = record.fields || {};
-        const id = record.id;
-        const createdTime = record.createdTime || '';
-        const estado = (fields['Estado'] || fields['Status'] || 'Pendiente').trim();
-
-        if (!isInitialLoad && !knownRecordIds.has(id)) {
-          newlyDetectedRecord = fields;
-        }
-        knownRecordIds.add(id);
-
-        const card = createCardElement(id, fields, estado, createdTime);
-
-        if (estado.toLowerCase() === 'confirmada' || estado.toLowerCase() === 'confirmado') {
-          colConfirmada.appendChild(card);
-          countC++;
-        } else if (estado.toLowerCase() === 'completada' || estado.toLowerCase() === 'completado' || estado.toLowerCase() === 'cerrada') {
-          colCompletada.appendChild(card);
-          countDone++;
-        } else {
-          colPendiente.appendChild(card);
-          countP++;
-        }
-      });
-
-      document.getElementById('countPendiente').textContent = countP;
-      document.getElementById('countConfirmada').textContent = countC;
-      document.getElementById('countCompletada').textContent = countDone;
-
-      document.getElementById('badgeColPendiente').textContent = countP;
-      document.getElementById('badgeColConfirmada').textContent = countC;
-      document.getElementById('badgeColCompletada').textContent = countDone;
-
-      if (newlyDetectedRecord) {
-        triggerLiveBanner(newlyDetectedRecord);
-      }
-
-      isInitialLoad = false;
-      lucide.createIcons();
-    }
-
-    function createCardElement(recordId, fields, estado, createdTime) {
-      // 1. Cliente y Teléfono (resueltos desde la tabla Clientes)
-      let cliente = fields['Cliente_Nombre'] || '';
-      if (!cliente && typeof fields['Cliente'] === 'string') cliente = fields['Cliente'];
-      if (!cliente && fields['Nombre']) cliente = fields['Nombre'];
-      if (!cliente) cliente = 'Cliente no asignado';
-
-      let telefono = fields['Cliente_Telefono'] || fields['Telefono'] || fields['Teléfono'] || fields['Contacto'] || '';
-
-      // 2. Técnico asignado (resuelto desde la tabla Tecnicos)
-      let tecnico = fields['Tecnico_Nombre'] || '';
-      if (!tecnico && typeof fields['Tecnico'] === 'string') tecnico = fields['Tecnico'];
-      if (!tecnico) tecnico = 'Por asignar';
-
-      // 3. Servicio / Bicicleta
-      const servicio = fields['Bicicleta'] || fields['Servicio'] || fields['Tipo'] || 'Mantenimiento General';
-
-      // 4. Fecha Agendada solicitada
-      const fechaAgendada = fields['Fecha'] || fields['Fecha Agendada'] || fields['Fecha_Cita'] || fields['Fecha_Hora'] || 'Por definir';
-
-      // 5. Fecha de Creación del registro
-      let fechaCreacionTexto = '';
-      if (createdTime) {
-        try {
-          const d = new Date(createdTime);
-          fechaCreacionTexto = d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        } catch(e) {
-          fechaCreacionTexto = createdTime;
+      // Resolver Cliente y Teléfono
+      if (Array.isArray(fields['Cliente']) && fields['Cliente'].length > 0) {
+        const clienteId = fields['Cliente'][0];
+        if (clientesMap[clienteId]) {
+          fields['Cliente_Nombre'] = clientesMap[clienteId].nombre;
+          fields['Cliente_Telefono'] = clientesMap[clienteId].telefono;
         }
       }
 
-      const notas = fields['Notas'] || fields['Detalles'] || '';
-
-      const card = document.createElement('div');
-      card.className = 'bg-slate-950/90 border border-slate-800 rounded-xl p-4 shadow-lg hover:border-slate-700 transition space-y-3';
-      card.id = `card-${recordId}`;
-
-      let estadoBadge = '';
-      let actionButtons = '';
-
-      if (estado.toLowerCase() === 'confirmada' || estado.toLowerCase() === 'confirmado') {
-        estadoBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">CONFIRMADA</span>`;
-        actionButtons = `
-          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-end">
-            <button onclick="updateRecordStatus('${recordId}', 'Completada')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-emerald-600/20 transition">
-              <i data-lucide="check" class="w-3.5 h-3.5"></i>
-              Completar Cita
-            </button>
-          </div>
-        `;
-      } else if (estado.toLowerCase() === 'completada' || estado.toLowerCase() === 'completado' || estado.toLowerCase() === 'cerrada') {
-        estadoBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">COMPLETADA</span>`;
-        actionButtons = `
-          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-emerald-400">
-            <span class="inline-flex items-center gap-1">
-              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Servicio Cerrado
-            </span>
-          </div>
-        `;
-      } else {
-        estadoBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">PENDIENTE</span>`;
-        actionButtons = `
-          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-end">
-            <button onclick="updateRecordStatus('${recordId}', 'Confirmada')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-blue-600/20 transition">
-              <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-              Confirmar
-            </button>
-          </div>
-        `;
-      }
-
-      card.innerHTML = `
-        <div class="flex items-start justify-between gap-2">
-          <div>
-            <h4 class="text-sm font-bold text-white tracking-wide">${escapeHtml(cliente)}</h4>
-            <div class="flex items-center gap-1 text-xs text-emerald-400 font-medium mt-0.5">
-              <i data-lucide="wrench" class="w-3 h-3"></i>
-              <span>${escapeHtml(servicio)}</span>
-            </div>
-          </div>
-          ${estadoBadge}
-        </div>
-
-        <div class="space-y-1.5 text-xs text-slate-400">
-          ${telefono ? `
-          <div class="flex items-center gap-1.5 text-slate-300">
-            <i data-lucide="phone" class="w-3.5 h-3.5 text-emerald-400"></i>
-            <span>${escapeHtml(telefono)}</span>
-          </div>` : ''}
-
-          <div class="flex items-center gap-1.5 text-slate-300">
-            <i data-lucide="user-cog" class="w-3.5 h-3.5 text-blue-400"></i>
-            <span>Técnico: <strong class="text-white">${escapeHtml(tecnico)}</strong></span>
-          </div>
-
-          <div class="flex items-center gap-1.5">
-            <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-400"></i>
-            <span>Fecha Cita: <strong class="text-slate-200">${escapeHtml(fechaAgendada)}</strong></span>
-          </div>
-
-          ${fechaCreacionTexto ? `
-          <div class="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <i data-lucide="clock" class="w-3 h-3"></i>
-            <span>Registrado: ${escapeHtml(fechaCreacionTexto)}</span>
-          </div>` : ''}
-
-          ${notas ? `
-          <div class="p-2 bg-slate-900 rounded border border-slate-800 text-[11px] text-slate-300 mt-1">
-            ${escapeHtml(notas)}
-          </div>` : ''}
-        </div>
-
-        ${actionButtons}
-      `;
-
-      return card;
-    }
-
-    async function updateRecordStatus(recordId, newStatus) {
-      const card = document.getElementById(`card-${recordId}`);
-      if (card) {
-        card.classList.add('opacity-50', 'pointer-events-none');
-      }
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/${recordId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fields: { 'Estado': newStatus }
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Error ${response.status}: ${response.statusText}`);
-        }
-
-        await fetchAirtableRecords(false);
-
-      } catch (error) {
-        console.error('Error al actualizar estado:', error);
-        alert('No se pudo actualizar el estado en Airtable.');
-        if (card) {
-          card.classList.remove('opacity-50', 'pointer-events-none');
+      // Resolver Técnico
+      if (Array.isArray(fields['Tecnico']) && fields['Tecnico'].length > 0) {
+        const tecnicoId = fields['Tecnico'][0];
+        if (tecnicosMap[tecnicoId]) {
+          fields['Tecnico_Nombre'] = tecnicosMap[tecnicoId].nombre;
         }
       }
+
+      return {
+        id: cita.id,
+        createdTime: cita.createdTime,
+        fields
+      };
+    });
+
+    res.json({ records: enrichedRecords });
+  } catch (error) {
+    console.error('Error al enriquecer citas:', error);
+    res.status(500).json({ error: 'Error al consultar Airtable' });
+  }
+});
+
+// 2. ACTUALIZAR ESTADO DE CITA (PATCH /api/citas/:id)
+app.patch('/api/citas/:id', async (req, res) => {
+  const { id } = req.params;
+  const { fields } = req.body;
+
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}/${id}`;
+  try {
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${AIRTABLE_PAT}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ fields })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({ error: errorText });
     }
 
-    function triggerLiveBanner(fields) {
-      const banner = document.getElementById('liveBanner');
-      const text = document.getElementById('liveBannerText');
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error al actualizar cita en Airtable:', error);
+    res.status(500).json({ error: 'Error interno al actualizar la cita' });
+  }
+});
 
-      const cliente = fields['Cliente_Nombre'] || fields['Cliente'] || fields['Nombre'] || 'Nuevo Cliente';
-      const servicio = fields['Bicicleta'] || fields['Servicio'] || 'Servicio General';
-      const fecha = fields['Fecha'] || fields['Fecha Agendada'] || 'Hoy';
+// Servir la página principal
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-      text.textContent = `${cliente} ha agendado para "${servicio}" (${fecha}).`;
-      banner.classList.remove('hidden');
-
-      lucide.createIcons();
-
-      setTimeout(() => {
-        dismissBanner();
-      }, 12000);
-    }
-
-    function dismissBanner() {
-      const banner = document.getElementById('liveBanner');
-      banner.classList.add('hidden');
-    }
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
-  </script>
-</body>
-</html>
+app.listen(PORT, () => {
+  console.log(`Servidor seguro corriendo en el puerto ${PORT}`);
+});
