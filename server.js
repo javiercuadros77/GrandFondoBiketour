@@ -5,7 +5,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Variables de entorno privadas leídas desde Render
+// Variables de entorno de Render
 const AIRTABLE_PAT = process.env.AIRTABLE_PAT;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || 'Citas';
@@ -24,7 +24,6 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Obtener todas las citas
 // Función auxiliar para leer cualquier tabla de Airtable
 async function fetchTableRecords(tableName) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`;
@@ -47,7 +46,7 @@ async function fetchTableRecords(tableName) {
 // 1. OBTENER Y ENRIQUECER TODAS LAS CITAS (GET /api/citas)
 app.get('/api/citas', async (req, res) => {
   try {
-    // Consultar en paralelo las 3 tablas: Citas, Clientes y Tecnicos
+    // Consultar en paralelo las 3 tablas
     const [citasRecords, clientesRecords, tecnicosRecords] = await Promise.all([
       fetchTableRecords(AIRTABLE_TABLE_NAME),
       fetchTableRecords('Clientes'),
@@ -108,7 +107,7 @@ app.get('/api/citas', async (req, res) => {
   }
 });
 
-// Actualizar estado de cita
+// 2. ACTUALIZAR ESTADO DE CITA (PATCH /api/citas/:id)
 app.patch('/api/citas/:id', async (req, res) => {
   const { id } = req.params;
   const { fields } = req.body;
