@@ -238,7 +238,7 @@
           colConfirmada.appendChild(card);
           countC++;
         } else if (estado.toLowerCase() === 'completada' || estado.toLowerCase() === 'completado' || estado.toLowerCase() === 'cerrada') {
-          colCompletada.appendChild(card);
+          colCompletada.prepend(card);
           countDone++;
         } else {
           colPendiente.appendChild(card);
