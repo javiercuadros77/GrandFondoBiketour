@@ -144,12 +144,12 @@
         <div id="colConfirmada" class="p-4 space-y-4 flex-1 custom-scrollbar overflow-y-auto max-h-[680px]"></div>
       </div>
 
-      <!-- COLUMNA 3: COMPLETADA -->
+      <!-- COLUMNA 3: COMPLETADA (ÚLTIMAS 3 CITAS) -->
       <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl flex flex-col shadow-xl overflow-hidden min-h-[580px]">
         <div class="bg-gradient-to-r from-emerald-950/50 to-emerald-900/20 px-5 py-4 border-b border-emerald-500/20 flex items-center justify-between">
           <div class="flex items-center gap-2.5">
             <span class="w-3 h-3 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20"></span>
-            <h2 class="text-sm font-bold tracking-wider uppercase text-emerald-200">3. Completada</h2>
+            <h2 class="text-sm font-bold tracking-wider uppercase text-emerald-200">3. Completada <span class="text-[11px] font-normal text-emerald-400/80">(Últimas 3)</span></h2>
           </div>
           <span id="badgeColCompletada" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">0</span>
         </div>
@@ -221,31 +221,60 @@
       let countP = 0, countC = 0, countDone = 0;
       let newlyDetectedRecord = null;
 
+      const listPendientes = [];
+      const listConfirmadas = [];
+      const listCompletadas = [];
+
       records.forEach(record => {
         const fields = record.fields || {};
         const id = record.id;
-        const createdTime = record.createdTime || '';
-        const estado = (fields['Estado'] || fields['Status'] || 'Pendiente').trim();
+        const estado = (fields['Estado'] || fields['Status'] || 'Pendiente').toLowerCase().trim();
 
         if (!isInitialLoad && !knownRecordIds.has(id)) {
           newlyDetectedRecord = fields;
         }
         knownRecordIds.add(id);
 
-        const card = createCardElement(id, fields, estado, createdTime);
-
-        if (estado.toLowerCase() === 'confirmada' || estado.toLowerCase() === 'confirmado') {
-          colConfirmada.appendChild(card);
-          countC++;
-        } else if (estado.toLowerCase() === 'completada' || estado.toLowerCase() === 'completado' || estado.toLowerCase() === 'cerrada') {
-          colCompletada.prepend(card);
-          countDone++;
+        if (estado === 'confirmada' || estado === 'confirmado') {
+          listConfirmadas.push(record);
+        } else if (estado === 'completada' || estado === 'completado' || estado === 'cerrada') {
+          listCompletadas.push(record);
         } else {
-          colPendiente.appendChild(card);
-          countP++;
+          listPendientes.push(record);
         }
       });
 
+      // 1. ORDENAMIENTO ESTRICTO DE COMPLETADAS:
+      // Ordena por fecha de creación del registro en Airtable (más reciente primero)
+      listCompletadas.sort((a, b) => new Date(b.createdTime || 0) - new Date(a.createdTime || 0));
+
+      // 2. SELECCIONAR SOLAMENTE LAS ÚLTIMAS 3 CITAS COMPLETADAS
+      const ultimas3Completadas = listCompletadas.slice(0, 3);
+
+      // Renderizar Pendientes
+      listPendientes.forEach(r => {
+        const card = createCardElement(r.id, r.fields || {}, r.fields?.['Estado'] || 'Pendiente', r.createdTime);
+        colPendiente.appendChild(card);
+        countP++;
+      });
+
+      // Renderizar Confirmadas
+      listConfirmadas.forEach(r => {
+        const card = createCardElement(r.id, r.fields || {}, r.fields?.['Estado'] || 'Confirmada', r.createdTime);
+        colConfirmada.appendChild(card);
+        countC++;
+      });
+
+      // Renderizar SOLO las últimas 3 Completadas (con la más reciente arriba)
+      ultimas3Completadas.forEach(r => {
+        const card = createCardElement(r.id, r.fields || {}, r.fields?.['Estado'] || 'Completada', r.createdTime);
+        colCompletada.appendChild(card);
+      });
+
+      // El contador general refleja el total de citas completadas
+      countDone = listCompletadas.length;
+
+      // Actualizar contadores
       document.getElementById('countPendiente').textContent = countP;
       document.getElementById('countConfirmada').textContent = countC;
       document.getElementById('countCompletada').textContent = countDone;
@@ -263,7 +292,7 @@
     }
 
     function createCardElement(recordId, fields, estado, createdTime) {
-      // 1. Cliente y Teléfono (resueltos desde la tabla Clientes o directos)
+      // 1. Cliente y Teléfono
       let cliente = fields['Cliente_Nombre'] || '';
       if (!cliente && typeof fields['Cliente'] === 'string') cliente = fields['Cliente'];
       if (!cliente && fields['Nombre']) cliente = fields['Nombre'];
@@ -271,7 +300,7 @@
 
       let telefono = fields['Cliente_Telefono'] || fields['Telefono'] || fields['Teléfono'] || fields['Contacto'] || fields['Phone'] || '';
 
-      // 2. Técnico asignado (resuelto desde la tabla Tecnicos o directo)
+      // 2. Técnico asignado
       let tecnico = fields['Tecnico_Nombre'] || '';
       if (!tecnico && typeof fields['Tecnico'] === 'string') tecnico = fields['Tecnico'];
       if (!tecnico) tecnico = 'Por asignar';
@@ -279,14 +308,13 @@
       // 3. Servicio / Bicicleta
       const servicio = fields['Bicicleta'] || fields['Servicio'] || fields['Tipo'] || fields['Detalle Servicio'] || 'Mantenimiento General';
 
-      // 4. LECTURA EXPLÍCITA DE "Fecha- Hora" Y VARIACIONES
+      // 4. LECTURA EXPLÍCITA DE "Fecha- Hora" Y FORMATEO
       let rawFecha = fields['Fecha- Hora'] || fields['Fecha-Hora'] || fields['Fecha - Hora'] || 
-                     fields['Fecha'] || fields['Fecha y Hora'] || fields['Fecha y hora'] || fields['Fecha/Hora'] || 
-                     fields['Fecha Solicitada'] || fields['Fecha de Cita'] || fields['Fecha Cita'] || 
-                     fields['Fecha Agendada'] || fields['Fecha_Cita'] || fields['Fecha_Hora'] || 
-                     fields['Date'] || fields['Appointment Date'] || fields['Hora'];
+                     fields['Fecha'] || fields['Fecha y Hora'] || fields['Fecha y hora'] || 
+                     fields['Fecha/Hora'] || fields['Fecha Solicitada'] || fields['Fecha de Cita'] || 
+                     fields['Fecha Cita'] || fields['Fecha Agendada'] || fields['Date'] || fields['Hora'];
 
-      // Búsqueda de respaldo si la columna tiene otra variante con guión o espacio
+      // Búsqueda de respaldo en caso de cualquier otra variante
       if (!rawFecha) {
         for (const key of Object.keys(fields)) {
           const k = key.toLowerCase().trim();
